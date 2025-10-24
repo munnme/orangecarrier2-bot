@@ -3,7 +3,8 @@
 Orangecarrier -> Telegram bridge with cookie login check
 Deployable on Railway / Replit / GitHub Actions
 """
-
+import sys, types
+sys.modules['imghdr'] = types.ModuleType('imghdr')
 import os, time, json, re, requests, sqlite3
 from pathlib import Path
 from datetime import datetime
