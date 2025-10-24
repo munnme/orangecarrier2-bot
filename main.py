@@ -1,7 +1,5 @@
-# main.py
 """
 Orangecarrier -> Telegram bridge with cookie login check
-Deployable on Railway / Replit / GitHub Actions
 """
 import sys, types
 sys.modules['imghdr'] = types.ModuleType('imghdr')
@@ -42,7 +40,7 @@ def is_seen(item_id):
 
 def mark_seen(item_id):
     try:
-        cur.execute("INSERT INTO seen (id, first_seen) VALUES (?, ?)", (item_id, datetime.now(datetime.UTC).isoformat()))
+        cur.execute("INSERT INTO seen (id, first_seen) VALUES (?, ?)", (item_id, datetime.now().isoformat()))
         conn.commit()
     except Exception:
         pass
@@ -59,7 +57,7 @@ def get_session():
 def check_login(session):
     try:
         r = session.get(BASE_URL + "/dashboard", timeout=15)
-        if "Logout" in r.text or "logout" in r.text or "Dashboard" in r.text:
+        if "Logout" in r.text or "Dashboard" in r.text:
             return True
         return False
     except Exception:
@@ -74,6 +72,12 @@ def fetch_live_items(session):
         if r.status_code != 200:
             print("Live calls HTTP", r.status_code)
             return []
+
+        # Prevent scraping login page
+        if "Please Enter a valid Password" in r.text or "Sign Up" in r.text or "Forgot Password" in r.text:
+            print("⚠️ Login page detected, skipping fetch.")
+            return []
+
         soup = BeautifulSoup(r.text, "html.parser")
         blocks = soup.find_all(["div","li","p"])
         parsed, seen_texts = [], set()
@@ -127,13 +131,22 @@ def main_loop():
     session = get_session()
     bot.send_message(chat_id=TARGET_CHAT_ID, text="🚀 Bot started... Checking OrangeCarrier login...")
 
+    # ❌ যদি cookie না থাকে তাহলে কিছুই করবে না
     if not OC_SESSION_COOKIE:
-        bot.send_message(chat_id=TARGET_CHAT_ID, text="⚠️ No cookie found! Please set OC_SESSION_COOKIE in Secrets.")
+        bot.send_message(chat_id=TARGET_CHAT_ID, text="⚠️ No cookie found! Skipping OrangeCarrier data fetch.")
+        print("No cookie found. Waiting for cookie...")
+        while True:
+            time.sleep(60)
+        return
+
+    # ✅ cookie থাকলে লগইন চেক
+    if check_login(session):
+        bot.send_message(chat_id=TARGET_CHAT_ID, text="✅ OrangeCarrier login successful.")
     else:
-        if check_login(session):
-            bot.send_message(chat_id=TARGET_CHAT_ID, text="✅ OrangeCarrier login successful.")
-        else:
-            bot.send_message(chat_id=TARGET_CHAT_ID, text="❌ OrangeCarrier not logged in or cookie expired.")
+        bot.send_message(chat_id=TARGET_CHAT_ID, text="❌ OrangeCarrier not logged in or cookie expired.")
+        while True:
+            time.sleep(60)
+        return
 
     print("Polling every", POLL_INTERVAL, "seconds...")
     while True:
@@ -152,7 +165,7 @@ def main_loop():
                     aurl = it["audio"]
                     if aurl.startswith("/"):
                         aurl = BASE_URL + aurl
-                    fname = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.mp3"
+                    fname = f"{datetime.now().strftime('%Y%m%d%H%M%S')}.mp3"
                     dest = VOICES_DIR / fname
                     if download_file(session, aurl, dest):
                         audio_path = str(dest)
