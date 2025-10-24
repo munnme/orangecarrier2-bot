@@ -42,7 +42,7 @@ def is_seen(item_id):
 
 def mark_seen(item_id):
     try:
-        cur.execute("INSERT INTO seen (id, first_seen) VALUES (?, ?)", (item_id, datetime.utcnow().isoformat()))
+        cur.execute("INSERT INTO seen (id, first_seen) VALUES (?, ?)", (item_id, datetime.now(datetime.UTC).isoformat()))
         conn.commit()
     except Exception:
         pass
