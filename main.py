@@ -18,7 +18,6 @@ POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "15"))
 BASE_URL = "https://www.orangecarrier.com"
 LIVE_CALLS_PATH = "/live/calls"
 
-# sanity check
 if not BOT_TOKEN or not TARGET_CHAT_ID:
     raise RuntimeError("Set BOT_TOKEN and TARGET_CHAT_ID first")
 
@@ -36,7 +35,7 @@ cur = conn.cursor()
 cur.execute("CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, first_seen TEXT)")
 conn.commit()
 
-# ================= UTIL =================
+# ================= UTILITIES =================
 def is_seen(item_id):
     cur.execute("SELECT 1 FROM seen WHERE id=?", (item_id,))
     return cur.fetchone() is not None
@@ -59,7 +58,10 @@ def send_message(text):
 def get_session():
     s = requests.Session()
     if OC_SESSION_COOKIE:
-        s.headers.update({"Cookie": OC_SESSION_COOKIE, "User-Agent": "Mozilla/5.0"})
+        s.headers.update({
+            "Cookie": OC_SESSION_COOKIE,
+            "User-Agent": "Mozilla/5.0 (compatible; OrangeCarrierBot)"
+        })
     return s
 
 AUDIO_RX = re.compile(r"https?://[^\s'\"<>]+(?:\.mp3|\.ogg|\.m4a)", re.I)
@@ -105,6 +107,59 @@ def fetch_live_items(session):
 def download_file(session, url, dest):
     try:
         r = session.get(url, stream=True, timeout=40)
+        r.raise_for_status()
+        with open(dest, "wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+        return True
+    except Exception as e:
+        print("Download error:", e)
+        return False
+
+def send_to_telegram(item, audio_path=None):
+    text = f"📞 New Call\n\n{item.get('text','')}"
+    try:
+        if audio_path:
+            with open(audio_path, "rb") as f:
+                bot.send_audio(chat_id=TARGET_CHAT_ID, audio=InputFile(f), caption=text)
+        else:
+            bot.send_message(chat_id=TARGET_CHAT_ID, text=text)
+    except Exception as e:
+        print("Send error:", e)
+
+# ================= MAIN LOOP =================
+def main_loop():
+    send_message("🚀 Bot started successfully!")
+    session = get_session()
+    check_cookie(session)
+
+    while True:
+        try:
+            items = fetch_live_items(session)
+            for it in items:
+                item_id = it["id"]
+                if is_seen(item_id):
+                    continue
+                mark_seen(item_id)
+                audio_url = it.get("audio")
+                audio_path = None
+                if audio_url:
+                    if audio_url.startswith("/"):
+                        audio_url = BASE_URL + audio_url
+                    fname = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.mp3"
+                    dest = VOICES_DIR / fname
+                    if download_file(session, audio_url, dest):
+                        audio_path = str(dest)
+                send_to_telegram(it, audio_path)
+            time.sleep(POLL_INTERVAL)
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print("Loop error:", e)
+            time.sleep(POLL_INTERVAL)
+
+if __name__ == "__main__":
+    main_loop()        r = session.get(url, stream=True, timeout=40)
         r.raise_for_status()
         with open(dest, "wb") as f:
             for chunk in r.iter_content(8192):
