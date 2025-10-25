@@ -186,7 +186,7 @@ def main_loop():
 from telegram.ext import Updater, CommandHandler
 
 def login_command(update, context):
-    app_url = os.getenv("APP_URL", "https://worker-production-d4ba.up.railway.app/login")
+    app_url = os.getenv("APP_URL", "https://worker-production-d4ba.up.railway.app")
     update.message.reply_text(
         f"🔐 Login to OrangeCarrier:\n👉 {app_url}/login\n\n"
         "After logging in, the bot will automatically save your cookie."
