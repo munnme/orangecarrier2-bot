@@ -21,6 +21,11 @@ LIVE_CALLS_PATH = "/live/calls"
 if not BOT_TOKEN or not TARGET_CHAT_ID:
     raise RuntimeError("❌ BOT_TOKEN and TARGET_CHAT_ID must be set.")
 
+# 🔹 Cookie ফাইল থেকেও পড়া (যদি env এ না থাকে)
+cookie_path = Path("/tmp/orangecarrier_data/oc_cookie.txt")
+if not OC_SESSION_COOKIE and cookie_path.exists():
+    OC_SESSION_COOKIE = cookie_path.read_text().strip()
+
 # ================ PATHS ==================
 DATA_DIR = Path("/tmp/orangecarrier_data")
 VOICES_DIR = DATA_DIR / "voices"
@@ -177,6 +182,54 @@ def main_loop():
             print("Loop error:", e)
             time.sleep(POLL_INTERVAL)
 
+# 🔹 Telegram /login কমান্ড যোগ করা
+from telegram.ext import Updater, CommandHandler
+
+def login_command(update, context):
+    app_url = os.getenv("APP_URL", "https://your-app-name.up.railway.app")
+    update.message.reply_text(
+        f"🔐 Login to OrangeCarrier:\n👉 {app_url}/login\n\n"
+        "After logging in, the bot will automatically save your cookie."
+    )
+
+# ==================== BOT STARTUP ====================
+updater = Updater(BOT_TOKEN)
+dp = updater.dispatcher
+dp.add_handler(CommandHandler("login", login_command))
+updater.start_polling()
+print("🤖 Telegram bot is running...")
+
+# 🔹 Flask সার্ভার যোগ করা (cookie সেভ করার জন্য)
+from flask import Flask, request, redirect
+import threading
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ OrangeCarrier Bridge Bot is running."
+
+@app.route('/login')
+def login_page():
+    # OrangeCarrier এর লগইন পেজে রিডাইরেক্ট করবে
+    return redirect("https://www.orangecarrier.com/login")
+
+@app.route('/save_cookie', methods=['POST'])
+def save_cookie():
+    data = request.get_json(force=True)
+    cookie = data.get("cookie")
+    if not cookie:
+        return {"error": "No cookie received"}, 400
+    cookie_path = Path("/tmp/orangecarrier_data/oc_cookie.txt")
+    cookie_path.write_text(cookie.strip())
+    return {"status": "Cookie saved successfully"}
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+
+threading.Thread(target=run_flask, daemon=True).start()
+
+# 🔹 Main loop চালানো
 if __name__ == "__main__":
     print("Starting bridge...")
     main_loop()
