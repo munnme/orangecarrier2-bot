@@ -1,7 +1,7 @@
 """
-OrangeCarrier -> Telegram Bridge (Socket.IO + WebSocket only, fully auto reconnect)
+OrangeCarrier -> Telegram Bridge (Socket.IO + WebSocket only, fully auto reconnect, debug enabled)
 """
-import os, json, time, sqlite3, threading
+import os, json, time, sqlite3, threading, urllib.parse
 from datetime import datetime
 from pathlib import Path
 from telegram import Bot, InputFile
@@ -9,24 +9,23 @@ from telegram.ext import Updater, CommandHandler
 from flask import Flask
 import socketio
 
-
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID")
 ORANGE_TOKEN = os.getenv("ORANGE_TOKEN")
 
-
-if not BOT_TOKEN or not TARGET_CHAT_ID or not ORANGE_TOKEN: 
-    
+if not BOT_TOKEN or not TARGET_CHAT_ID or not ORANGE_TOKEN:
     raise RuntimeError("❌ BOT_TOKEN, TARGET_CHAT_ID, ORANGE_TOKEN must be set in Railway environment variables!")
 
+# ✅ Token encode (to handle special chars like "+", "=")
+encoded_token = urllib.parse.quote(ORANGE_TOKEN, safe='')
 
-print(f"🔐 BOT_TOKEN={BOT_TOKEN[:5]}..., CHAT_ID={TARGET_CHAT_ID}, ORANGE_TOKEN={ORANGE_TOKEN}")
+# ✅ Correct URL
+WS_URL = f"https://hub.orangecarrier.com/socket.io/?EIO=4&transport=websocket&token={encoded_token}"
 
-WS_URL = f"https://hub.orangecarrier.com/socket.io/?EIO=4&transport=websocket&token={ORANGE_TOKEN}"
-
-print(f"🔐 Connecting to: {WS_URL}")
-send_to_telegram(f"🧩 Debug: Connecting to\n{WS_URL}")
+# ✅ Debug print (token partially hidden)
+print(f"🔐 BOT_TOKEN={BOT_TOKEN[:5]}..., CHAT_ID={TARGET_CHAT_ID}, ORANGE_TOKEN={ORANGE_TOKEN[:10]}...")
+print(f"🌐 Connecting to: {WS_URL}")
 
 # ================ PATHS ==================
 DATA_DIR = Path("/tmp/orangecarrier_data")
@@ -67,6 +66,10 @@ def mark_seen(item_id):
 # ================ SOCKET.IO HANDLER =================
 sio = socketio.Client(reconnection=True, reconnection_attempts=9999)
 
+# ✅ Enable full debug logs
+sio.logger = True
+sio.engineio_logger = True
+
 @sio.event
 def connect():
     print("🟢 Connected successfully to OrangeCarrier Socket.IO!")
@@ -100,6 +103,7 @@ def on_call(data):
 def start_socket():
     while True:
         try:
+            print("🚀 Attempting to connect via Socket.IO...")
             sio.connect(WS_URL, transports=["websocket"])
             sio.wait()
         except Exception as e:
