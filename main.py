@@ -1,30 +1,22 @@
 """
-Orangecarrier -> Telegram bridge with cookie login check
+Orangecarrier -> Telegram bridge (WebSocket version, no cookie/login)
 """
 import sys, types
 sys.modules['imghdr'] = types.ModuleType('imghdr')
-import os, time, json, re, requests, sqlite3
+
+import os, time, json, sqlite3, threading
 from pathlib import Path
 from datetime import datetime
-from bs4 import BeautifulSoup
 from telegram import InputFile, Bot
+import websocket
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID")
-OC_SESSION_COOKIE = os.getenv("OC_SESSION_COOKIE")  # e.g. "laravel_session=abcd123; XSRF-TOKEN=xyz"
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "15"))
-
-BASE_URL = "https://www.orangecarrier.com"
-LIVE_CALLS_PATH = "/live/calls"
+WS_URL = os.getenv("WS_URL", "wss://www.orangecarrier.com/socket.io/?token=YOUR_TOKEN_HERE")
 
 if not BOT_TOKEN or not TARGET_CHAT_ID:
     raise RuntimeError("❌ BOT_TOKEN and TARGET_CHAT_ID must be set.")
-
-# 🔹 Cookie ফাইল থেকেও পড়া (যদি env এ না থাকে)
-cookie_path = Path("/tmp/orangecarrier_data/oc_cookie.txt")
-if not OC_SESSION_COOKIE and cookie_path.exists():
-    OC_SESSION_COOKIE = cookie_path.read_text().strip()
 
 # ================ PATHS ==================
 DATA_DIR = Path("/tmp/orangecarrier_data")
@@ -50,55 +42,110 @@ def mark_seen(item_id):
     except Exception:
         pass
 
-def get_session():
-    s = requests.Session()
-    if OC_SESSION_COOKIE:
-        s.headers.update({
-            "Cookie": OC_SESSION_COOKIE,
-            "User-Agent": "Mozilla/5.0"
-        })
-    return s
+# ================ TELEGRAM =================
+bot = Bot(token=BOT_TOKEN)
 
-def check_login(session):
+def send_to_telegram(item, audio_path=None):
+    """
+    Sends message or audio to Telegram
+    """
+    text = item.get("text", "")
+    body = f"🔔 New WebSocket event\n\n{text[:1000]}"
     try:
-        r = session.get(BASE_URL + "/dashboard", timeout=15)
-        if "Logout" in r.text or "Dashboard" in r.text:
-            return True
-        return False
-    except Exception:
-        return False
+        if audio_path and Path(audio_path).exists():
+            with open(audio_path, "rb") as f:
+                bot.send_audio(chat_id=TARGET_CHAT_ID, audio=InputFile(f), caption=body)
+        else:
+            bot.send_message(chat_id=TARGET_CHAT_ID, text=body)
+    except Exception as e:
+        print("Telegram send failed:", e)
 
-AUDIO_RX = re.compile(r"https?://[^\s'\"<>]+(?:\.mp3|\.ogg|\.m4a)", re.IGNORECASE)
+# ================ WEBSOCKET LISTENER =================
+def start_websocket():
+    """
+    Connects to OrangeCarrier websocket and listens for real-time events
+    """
+    def on_message(ws, message):
+        print("📩 Received:", message[:200])
+        try:
+            data = json.loads(message)
+            # সাধারণত socket.io data array আকারে আসে
+            if isinstance(data, list) and len(data) > 1:
+                event_type = data[0]
+                payload = data[1]
 
-def fetch_live_items(session):
-    url = BASE_URL + LIVE_CALLS_PATH
-    try:
-        r = session.get(url, timeout=20)
-        if r.status_code != 200:
-            print("Live calls HTTP", r.status_code)
-            return []
+                # যদি "call" event আসে
+                if event_type == "call" and isinstance(payload, dict):
+                    calls_data = payload.get("calls", {}).get("calls", [])
+                    for call in calls_data:
+                        call_id = str(call.get("id", time.time()))
+                        if is_seen(call_id):
+                            continue
+                        mark_seen(call_id)
+                        text = json.dumps(call, indent=2, ensure_ascii=False)
+                        send_to_telegram({"text": f"📞 New Call Received:\n{text}"})
+                else:
+                    send_to_telegram({"text": f"📡 Event: {event_type}\n\n{json.dumps(payload, indent=2, ensure_ascii=False)}"})
+        except Exception as e:
+            print("⚠️ WebSocket parse error:", e)
 
-        # Prevent scraping login page
-        if "Please Enter a valid Password" in r.text or "Sign Up" in r.text or "Forgot Password" in r.text:
-            print("⚠️ Login page detected, skipping fetch.")
-            return []
+    def on_error(ws, error):
+        print("❌ WebSocket error:", error)
 
-        soup = BeautifulSoup(r.text, "html.parser")
-        blocks = soup.find_all(["div","li","p"])
-        parsed, seen_texts = [], set()
-        for b in blocks:
-            txt = b.get_text(" ", strip=True)
-            if len(txt) < 10:
-                continue
-            aud = None
-            for m in AUDIO_RX.findall(str(b)):
-                aud = m
-                break
-            key = (aud or "") + "|" + txt[:120]
-            if key in seen_texts:
-                continue
-            seen_texts.add(key)
-            parsed.append({"id": key, "text": txt, "audio": aud})
+    def on_close(ws, code, msg):
+        print("🔴 WebSocket closed:", code, msg)
+        bot.send_message(chat_id=TARGET_CHAT_ID, text="🔴 WebSocket disconnected. Reconnecting in 5s...")
+        time.sleep(5)
+        start_websocket()
+
+    def on_open(ws):
+        print("🟢 Connected to OrangeCarrier WebSocket")
+        bot.send_message(chat_id=TARGET_CHAT_ID, text="🟢 Connected to OrangeCarrier WebSocket!")
+
+    ws = websocket.WebSocketApp(
+        WS_URL,
+        on_open=on_open,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close
+    )
+
+    ws.run_forever()
+
+# ================ TELEGRAM COMMAND ================
+from telegram.ext import Updater, CommandHandler
+
+def status_command(update, context):
+    update.message.reply_text("🤖 Bot is running and listening via WebSocket!")
+
+updater = Updater(BOT_TOKEN)
+dp = updater.dispatcher
+dp.add_handler(CommandHandler("status", status_command))
+updater.start_polling()
+print("🤖 Telegram bot is running...")
+
+# ================ MAIN =================
+def main_loop():
+    bot.send_message(chat_id=TARGET_CHAT_ID, text="🚀 Bot started... Connecting to WebSocket...")
+    start_websocket()
+
+# 🔹 Flask সার্ভার (optional)
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ OrangeCarrier WebSocket Bridge Bot is running."
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+
+threading.Thread(target=run_flask, daemon=True).start()
+
+# 🔹 Start Main
+if __name__ == "__main__":
+    print("Starting bridge (WebSocket mode)...")
+    main_loop()            parsed.append({"id": key, "text": txt, "audio": aud})
         return parsed
     except Exception as e:
         print("fetch_live_items error:", e)
