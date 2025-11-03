@@ -9,12 +9,6 @@ from telegram.ext import Updater, CommandHandler
 from flask import Flask
 import socketio
 
-import logging
-logging.basicConfig(level=logging.DEBUG)
-
-socketio.logging = True
-logging.getLogger("engineio").setLevel(logging.DEBUG)
-logging.getLogger("socketio").setLevel(logging.DEBUG)
 
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
