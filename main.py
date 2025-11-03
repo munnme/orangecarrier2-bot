@@ -1,6 +1,10 @@
 """
-OrangeCarrier -> Telegram Bridge (Socket.IO + WebSocket only, fully auto reconnect, debug enabled)
+OrangeCarrier -> Telegram Bridge (Improved Socket.IO Client)
+✅ Auto reconnect
+✅ Auth event system added
+✅ Clean debug + Telegram notifications
 """
+
 import os, json, time, sqlite3, threading, urllib.parse
 from datetime import datetime
 from pathlib import Path
@@ -17,17 +21,14 @@ ORANGE_TOKEN = os.getenv("ORANGE_TOKEN")
 if not BOT_TOKEN or not TARGET_CHAT_ID or not ORANGE_TOKEN:
     raise RuntimeError("❌ BOT_TOKEN, TARGET_CHAT_ID, ORANGE_TOKEN must be set in Railway environment variables!")
 
-# ✅ Token encode (to handle special chars like "+", "=")
+# ✅ Encode token safely
 encoded_token = urllib.parse.quote(ORANGE_TOKEN, safe='')
+SERVER_URL = f"https://hub.orangecarrier.com?token={encoded_token}"
 
-# ✅ Correct URL
-WS_URL = f"https://hub.orangecarrier.com/socket.io/?EIO=4&transport=websocket&token={encoded_token}"
+print(f"🚀 Starting OrangeCarrier Socket.IO bridge...")
+print(f"🌐 Connecting to: {SERVER_URL}")
 
-# ✅ Debug print (token partially hidden)
-print(f"🔐 BOT_TOKEN={BOT_TOKEN[:5]}..., CHAT_ID={TARGET_CHAT_ID}, ORANGE_TOKEN={ORANGE_TOKEN[:10]}...")
-print(f"🌐 Connecting to: {WS_URL}")
-
-# ================ PATHS ==================
+# ================ DATA STORAGE ================
 DATA_DIR = Path("/tmp/orangecarrier_data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -41,7 +42,6 @@ conn.commit()
 bot = Bot(token=BOT_TOKEN)
 
 def send_to_telegram(text, audio_path=None):
-    """Send message or audio file to Telegram"""
     try:
         if audio_path and Path(audio_path).exists():
             with open(audio_path, "rb") as f:
@@ -51,7 +51,7 @@ def send_to_telegram(text, audio_path=None):
     except Exception as e:
         print("⚠️ Telegram send failed:", e)
 
-# ================ HELPER =================
+# ================ HELPER ================
 def is_seen(item_id):
     cur.execute("SELECT 1 FROM seen WHERE id=?", (item_id,))
     return cur.fetchone() is not None
@@ -63,30 +63,36 @@ def mark_seen(item_id):
     except Exception:
         pass
 
-# ================ SOCKET.IO HANDLER =================
-sio = socketio.Client(reconnection=True, reconnection_attempts=9999)
-
-# ✅ Enable full debug logs
+# ================ SOCKET.IO CLIENT ================
+sio = socketio.Client(reconnection=True, reconnection_attempts=0, reconnection_delay=5)
 sio.logger = True
 sio.engineio_logger = True
 
 @sio.event
 def connect():
-    print("🟢 Connected successfully to OrangeCarrier Socket.IO!")
-    send_to_telegram("🟢 Connected to OrangeCarrier WebSocket successfully!")
+    print("✅ [SIO] Connected successfully!")
+    send_to_telegram("✅ Connected to OrangeCarrier WebSocket!")
+    # Auth event send (extra check)
+    print("🔐 [SIO] Sending auth event...")
+    sio.emit("auth", {"token": ORANGE_TOKEN})
 
 @sio.event
 def disconnect():
-    print("🔴 WebSocket disconnected. Reconnecting...")
+    print("🔴 [SIO] Disconnected! Retrying...")
     send_to_telegram("🔴 Lost connection. Reconnecting...")
 
 @sio.event
 def connect_error(e):
-    print("❌ Connection error:", e)
+    print(f"💥 [SIO] Connection error: {e}")
+
+@sio.on("auth_response")
+def on_auth_response(data):
+    print("🧠 [SIO] Auth response received:")
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+    send_to_telegram(f"🧠 Auth Response:\n{data}")
 
 @sio.on("call")
 def on_call(data):
-    """Handle new call event"""
     try:
         if isinstance(data, dict):
             call_id = str(data.get("id", time.time()))
@@ -99,6 +105,49 @@ def on_call(data):
             send_to_telegram(f"📡 Event Data:\n{data}")
     except Exception as e:
         print("⚠️ Parse error:", e)
+
+@sio.on("*")
+def catch_all(event, data=None):
+    print(f"📩 [SIO] Event received → {event}: {data}")
+
+def start_socket():
+    while True:
+        try:
+            print("🚀 Attempting to connect via Socket.IO...")
+            sio.connect(SERVER_URL, transports=["websocket"])
+            sio.wait()
+        except Exception as e:
+            print(f"⚠️ [SIO] Connection lost: {e}")
+            print("🔁 Retrying in 5s...\n")
+            time.sleep(5)
+
+# ================ TELEGRAM COMMAND ================
+def status_command(update, context):
+    update.message.reply_text("🤖 Bot is running and WebSocket connected!")
+
+updater = Updater(BOT_TOKEN)
+dp = updater.dispatcher
+dp.add_handler(CommandHandler("status", status_command))
+updater.start_polling()
+print("🤖 Telegram bot running...")
+
+# ================ FLASK SERVER (keep alive) ================
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ OrangeCarrier WebSocket Bridge active on Railway."
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+
+threading.Thread(target=run_flask, daemon=True).start()
+
+# ================ START =================
+if __name__ == "__main__":
+    print("🚀 Launching OrangeCarrier WebSocket bridge...")
+    send_to_telegram("🚀 Bot started... Connecting to OrangeCarrier WebSocket...")
+    start_socket()        print("⚠️ Parse error:", e)
 
 def start_socket():
     while True:
