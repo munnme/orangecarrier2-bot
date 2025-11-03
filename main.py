@@ -62,6 +62,7 @@ def send_to_telegram(item, audio_path=None):
 
 # ================ WEBSOCKET LISTENER =================
 def start_websocket():
+    print("🔧 Loaded WS_URL:", WS_URL)
     """
     Connects to OrangeCarrier websocket and listens for real-time events
     """
