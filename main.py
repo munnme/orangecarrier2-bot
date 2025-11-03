@@ -21,9 +21,12 @@ if not BOT_TOKEN or not TARGET_CHAT_ID or not ORANGE_TOKEN:
     raise RuntimeError("❌ BOT_TOKEN, TARGET_CHAT_ID, ORANGE_TOKEN must be set in Railway environment variables!")
 
 
-print(f"🔐 BOT_TOKEN={BOT_TOKEN[:5]}..., CHAT_ID={TARGET_CHAT_ID}, ORANGE_TOKEN={ORANGE_TOKEN[:10]}...")
+print(f"🔐 BOT_TOKEN={BOT_TOKEN[:5]}..., CHAT_ID={TARGET_CHAT_ID}, ORANGE_TOKEN={ORANGE_TOKEN}")
 
 WS_URL = f"https://hub.orangecarrier.com/socket.io/?EIO=4&transport=websocket&token={ORANGE_TOKEN}"
+
+print(f"🔐 Connecting to: {WS_URL}")
+send_to_telegram(f"🧩 Debug: Connecting to\n{WS_URL}")
 
 # ================ PATHS ==================
 DATA_DIR = Path("/tmp/orangecarrier_data")
