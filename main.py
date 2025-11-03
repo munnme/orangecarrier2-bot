@@ -17,7 +17,7 @@ ORANGE_TOKEN = os.getenv("ORANGE_TOKEN")
 if not BOT_TOKEN or not TARGET_CHAT_ID or not ORANGE_TOKEN:
     raise RuntimeError("❌ BOT_TOKEN, TARGET_CHAT_ID, ORANGE_TOKEN must be set in Railway environment variables!")
 
-WS_URL = f"https://hub.orangecarrier.com/socket.io/?EIO=4&transport=websocket&token={ORANGE_TOKEN}"
+WS_URL = f"wss://hub.orangecarrier.com/socket.io/?EIO=4&transport=websocket&token={ORANGE_TOKEN}"
 
 # ================ PATHS ==================
 DATA_DIR = Path("/tmp/orangecarrier_data")
