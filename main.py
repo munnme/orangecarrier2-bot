@@ -147,42 +147,4 @@ threading.Thread(target=run_flask, daemon=True).start()
 if __name__ == "__main__":
     print("🚀 Launching OrangeCarrier WebSocket bridge...")
     send_to_telegram("🚀 Bot started... Connecting to OrangeCarrier WebSocket...")
-    start_socket()        print("⚠️ Parse error:", e)
-
-def start_socket():
-    while True:
-        try:
-            print("🚀 Attempting to connect via Socket.IO...")
-            sio.connect(WS_URL, transports=["websocket"])
-            sio.wait()
-        except Exception as e:
-            print("💥 Socket connection error:", e)
-            time.sleep(5)
-
-# ================ TELEGRAM COMMAND ================
-def status_command(update, context):
-    update.message.reply_text("🤖 Bot is running and WebSocket connected!")
-
-updater = Updater(BOT_TOKEN)
-dp = updater.dispatcher
-dp.add_handler(CommandHandler("status", status_command))
-updater.start_polling()
-print("🤖 Telegram bot running...")
-
-# ================ FLASK SERVER (keep alive) ================
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "✅ OrangeCarrier WebSocket Bridge is active and running on Railway."
-
-def run_flask():
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
-
-threading.Thread(target=run_flask, daemon=True).start()
-
-# ================ START =================
-if __name__ == "__main__":
-    print("🚀 Starting OrangeCarrier WebSocket bridge...")
-    send_to_telegram("🚀 Bot started... Connecting to OrangeCarrier WebSocket...")
     start_socket()
