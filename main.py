@@ -18,9 +18,10 @@ ORANGE_TOKEN = os.getenv("ORANGE_TOKEN")
 
 if not BOT_TOKEN or not TARGET_CHAT_ID or not ORANGE_TOKEN: 
     
-    print(f"🔐 BOT_TOKEN={BOT_TOKEN[:5]}..., CHAT_ID={TARGET_CHAT_ID}, ORANGE_TOKEN={ORANGE_TOKEN[:10]}...")
-    
     raise RuntimeError("❌ BOT_TOKEN, TARGET_CHAT_ID, ORANGE_TOKEN must be set in Railway environment variables!")
+
+
+print(f"🔐 BOT_TOKEN={BOT_TOKEN[:5]}..., CHAT_ID={TARGET_CHAT_ID}, ORANGE_TOKEN={ORANGE_TOKEN[:10]}...")
 
 WS_URL = f"https://hub.orangecarrier.com/socket.io/?EIO=4&transport=websocket&token={ORANGE_TOKEN}"
 
