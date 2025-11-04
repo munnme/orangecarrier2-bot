@@ -156,8 +156,10 @@ threading.Thread(target=run_flask, daemon=True).start()
 if __name__ == "__main__":
     print("🚀 Launching OrangeCarrier WebSocket bridge...")
     send_to_telegram("🚀 Bot started... Connecting to OrangeCarrier WebSocket...")
-    start_socket()            if is_seen(call_id):
-                return
+    start_socket()
+
+if is_seen(call_id):
+    return
             mark_seen(call_id)
             text = json.dumps(data, indent=2, ensure_ascii=False)
             send_to_telegram(f"📞 New Call Received:\n{text}")
