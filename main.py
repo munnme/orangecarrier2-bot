@@ -3,13 +3,14 @@ OrangeCarrier -> Telegram Bridge (Improved Socket.IO Client)
 ✅ Auto reconnect
 ✅ Auth event system added
 ✅ Clean debug + Telegram notifications
+✅ /ping command added
 """
 
 import os, json, time, sqlite3, threading, urllib.parse
 from datetime import datetime
 from pathlib import Path
-from telegram import Bot, InputFile
-from telegram.ext import Updater, CommandHandler
+from telegram import Bot, InputFile, Update
+from telegram.ext import Updater, CommandHandler, CallbackContext
 from flask import Flask
 import socketio
 
@@ -64,17 +65,12 @@ def mark_seen(item_id):
         pass
 
 # ================ SOCKET.IO CLIENT ================
-sio = socketio.Client(reconnection=True, reconnection_attempts=0, reconnection_delay=5)
-
-
-sio = socketio.Client(logger=False,
-    engineio_logger=False)
+sio = socketio.Client(reconnection=True, reconnection_attempts=0, reconnection_delay=5, logger=False, engineio_logger=False)
 
 @sio.event
 def connect():
     print("✅ [SIO] Connected successfully!")
     send_to_telegram("✅ Connected to OrangeCarrier WebSocket!")
-    # Auth event send (extra check)
     print("🔐 [SIO] Sending auth event...")
     sio.emit("auth", {"token": ORANGE_TOKEN})
 
@@ -99,6 +95,68 @@ def on_call(data):
         if isinstance(data, dict):
             call_id = str(data.get("id", time.time()))
             if is_seen(call_id):
+                return
+            mark_seen(call_id)
+            text = json.dumps(data, indent=2, ensure_ascii=False)
+            send_to_telegram(f"📞 New Call Received:\n{text}")
+        else:
+            send_to_telegram(f"📡 Event Data:\n{data}")
+    except Exception as e:
+        print("⚠️ Parse error:", e)
+
+@sio.on("*")
+def catch_all(event, data=None):
+    print(f"📩 [SIO] Event received → {event}: {data}")
+
+def start_socket():
+    while True:
+        try:
+            print("🚀 Attempting to connect via Socket.IO...")
+            sio.connect(SERVER_URL, transports=["websocket"])
+            sio.wait()
+        except Exception as e:
+            print(f"⚠️ [SIO] Connection lost: {e}")
+            print("🔁 Retrying in 5s...\n")
+            time.sleep(5)
+
+# ================ TELEGRAM COMMANDS ================
+def status_command(update: Update, context: CallbackContext):
+    connected = sio.connected
+    update.message.reply_text(
+        f"🤖 Bot is running!\n"
+        f"Socket: {'🟢 Connected' if connected else '🔴 Disconnected'}"
+    )
+
+def ping_command(update: Update, context: CallbackContext):
+    update.message.reply_text("🏓 Pong! Bot is alive and connected.")
+
+# Register commands
+updater = Updater(BOT_TOKEN)
+dp = updater.dispatcher
+dp.add_handler(CommandHandler("status", status_command))
+dp.add_handler(CommandHandler("ping", ping_command))
+
+# Start polling
+updater.start_polling()
+print("🤖 Telegram bot running...")
+
+# ================ FLASK SERVER (keep alive) ================
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ OrangeCarrier WebSocket Bridge active on Railway."
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+
+threading.Thread(target=run_flask, daemon=True).start()
+
+# ================ START =================
+if __name__ == "__main__":
+    print("🚀 Launching OrangeCarrier WebSocket bridge...")
+    send_to_telegram("🚀 Bot started... Connecting to OrangeCarrier WebSocket...")
+    start_socket()            if is_seen(call_id):
                 return
             mark_seen(call_id)
             text = json.dumps(data, indent=2, ensure_ascii=False)
