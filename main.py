@@ -1,9 +1,8 @@
 """
-OrangeCarrier -> Telegram Bridge (Improved Socket.IO Client)
+OrangeCarrier -> Telegram Bridge (Final Stable Version)
 ✅ Auto reconnect
-✅ Auth event system added
-✅ Clean debug + Telegram notifications
-✅ /ping command added
+✅ /ping, /status, /settoken
+✅ Clean logs + error handling
 """
 
 import os, json, time, sqlite3, threading, urllib.parse
@@ -17,17 +16,10 @@ import socketio
 # ================= CONFIG =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_CHAT_ID = os.getenv("TARGET_CHAT_ID")
-ORANGE_TOKEN = os.getenv("ORANGE_TOKEN")
+ORANGE_TOKEN = os.getenv("ORANGE_TOKEN", "")
 
-if not BOT_TOKEN or not TARGET_CHAT_ID or not ORANGE_TOKEN:
-    raise RuntimeError("❌ BOT_TOKEN, TARGET_CHAT_ID, ORANGE_TOKEN must be set in Railway environment variables!")
-
-# ✅ Encode token safely
-encoded_token = urllib.parse.quote(ORANGE_TOKEN, safe='')
-SERVER_URL = f"https://hub.orangecarrier.com?token={encoded_token}"
-
-print(f"🚀 Starting OrangeCarrier Socket.IO bridge...")
-print(f"🌐 Connecting to: {SERVER_URL}")
+if not BOT_TOKEN or not TARGET_CHAT_ID:
+    raise RuntimeError("❌ BOT_TOKEN and TARGET_CHAT_ID must be set!")
 
 # ================ DATA STORAGE ================
 DATA_DIR = Path("/tmp/orangecarrier_data")
@@ -38,6 +30,13 @@ conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
 cur = conn.cursor()
 cur.execute("CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, first_seen TEXT)")
 conn.commit()
+
+# Token ফাইল রাখব যাতে /settoken দিলে সংরক্ষণ হয়
+TOKEN_FILE = DATA_DIR / "orange_token.txt"
+if TOKEN_FILE.exists():
+    ORANGE_TOKEN = TOKEN_FILE.read_text().strip()
+elif ORANGE_TOKEN:
+    TOKEN_FILE.write_text(ORANGE_TOKEN)
 
 # ================ TELEGRAM BOT ================
 bot = Bot(token=BOT_TOKEN)
@@ -64,6 +63,10 @@ def mark_seen(item_id):
     except Exception:
         pass
 
+def get_server_url():
+    encoded_token = urllib.parse.quote(ORANGE_TOKEN, safe='')
+    return f"https://hub.orangecarrier.com?token={encoded_token}"
+
 # ================ SOCKET.IO CLIENT ================
 sio = socketio.Client(reconnection=True, reconnection_attempts=0, reconnection_delay=5, logger=False, engineio_logger=False)
 
@@ -71,7 +74,6 @@ sio = socketio.Client(reconnection=True, reconnection_attempts=0, reconnection_d
 def connect():
     print("✅ [SIO] Connected successfully!")
     send_to_telegram("✅ Connected to OrangeCarrier WebSocket!")
-    print("🔐 [SIO] Sending auth event...")
     sio.emit("auth", {"token": ORANGE_TOKEN})
 
 @sio.event
@@ -104,15 +106,11 @@ def on_call(data):
     except Exception as e:
         print("⚠️ Parse error:", e)
 
-@sio.on("*")
-def catch_all(event, data=None):
-    print(f"📩 [SIO] Event received → {event}: {data}")
-
 def start_socket():
     while True:
         try:
             print("🚀 Attempting to connect via Socket.IO...")
-            sio.connect(SERVER_URL, transports=["websocket"])
+            sio.connect(get_server_url(), transports=["websocket"])
             sio.wait()
         except Exception as e:
             print(f"⚠️ [SIO] Connection lost: {e}")
@@ -130,11 +128,27 @@ def status_command(update: Update, context: CallbackContext):
 def ping_command(update: Update, context: CallbackContext):
     update.message.reply_text("🏓 Pong! Bot is alive and connected.")
 
+def settoken_command(update: Update, context: CallbackContext):
+    global ORANGE_TOKEN
+    if len(context.args) == 0:
+        update.message.reply_text("❌ Usage: /settoken <your_orange_token>")
+        return
+    new_token = context.args[0].strip()
+    ORANGE_TOKEN = new_token
+    TOKEN_FILE.write_text(ORANGE_TOKEN)
+    update.message.reply_text("✅ Orange Token updated! Restarting socket connection...")
+    try:
+        sio.disconnect()
+    except:
+        pass
+    threading.Thread(target=start_socket, daemon=True).start()
+
 # Register commands
 updater = Updater(BOT_TOKEN)
 dp = updater.dispatcher
 dp.add_handler(CommandHandler("status", status_command))
 dp.add_handler(CommandHandler("ping", ping_command))
+dp.add_handler(CommandHandler("settoken", settoken_command))
 
 # Start polling
 updater.start_polling()
@@ -145,7 +159,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ OrangeCarrier WebSocket Bridge active on Railway."
+    return "✅ OrangeCarrier WebSocket Bridge active."
 
 def run_flask():
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
@@ -154,6 +168,5 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================ START =================
 if __name__ == "__main__":
-    print("🚀 Launching OrangeCarrier WebSocket bridge...")
     send_to_telegram("🚀 Bot started... Connecting to OrangeCarrier WebSocket...")
     start_socket()
