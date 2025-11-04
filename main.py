@@ -160,7 +160,7 @@ if __name__ == "__main__":
 
 if is_seen(call_id):
     return
-            mark_seen(call_id)
+mark_seen(call_id)
             text = json.dumps(data, indent=2, ensure_ascii=False)
             send_to_telegram(f"📞 New Call Received:\n{text}")
         else:
