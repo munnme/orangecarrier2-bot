@@ -156,6 +156,40 @@ threading.Thread(target=run_flask, daemon=True).start()
 if __name__ == "__main__":
     print("🚀 Launching OrangeCarrier WebSocket bridge...")
     send_to_telegram("🚀 Bot started... Connecting to OrangeCarrier WebSocket...")
+    start_socket()    update.message.reply_text(
+        f"🤖 Bot is running!\n"
+        f"Socket: {'🟢 Connected' if connected else '🔴 Disconnected'}"
+    )
+
+def ping_command(update: Update, context: CallbackContext):
+    update.message.reply_text("🏓 Pong! Bot is alive and connected.")
+
+# Register commands
+updater = Updater(BOT_TOKEN)
+dp = updater.dispatcher
+dp.add_handler(CommandHandler("status", status_command))
+dp.add_handler(CommandHandler("ping", ping_command))
+
+# Start polling
+updater.start_polling()
+print("🤖 Telegram bot running...")
+
+# ================ FLASK SERVER (keep alive) ================
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ OrangeCarrier WebSocket Bridge active on Railway."
+
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+
+threading.Thread(target=run_flask, daemon=True).start()
+
+# ================ START =================
+if __name__ == "__main__":
+    print("🚀 Launching OrangeCarrier WebSocket bridge...")
+    send_to_telegram("🚀 Bot started... Connecting to OrangeCarrier WebSocket...")
     start_socket()
 
 if is_seen(call_id):
