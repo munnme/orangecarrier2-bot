@@ -65,8 +65,10 @@ def mark_seen(item_id):
 
 # ================ SOCKET.IO CLIENT ================
 sio = socketio.Client(reconnection=True, reconnection_attempts=0, reconnection_delay=5)
-sio.logger = True
-sio.engineio_logger = True
+
+
+sio = socketio.Client(logger=False,
+    engineio_logger=False)
 
 @sio.event
 def connect():
